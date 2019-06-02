@@ -1,0 +1,81 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title>Inverse Kinematics 3D Robot Arm</title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <link rel="stylesheet" href="icg_report.css" type="text/css" />
+</head>
+<body>
+<div id="header">
+<h1 class="title">Inverse Kinematics 3D Robot Arm</h1>
+</div>
+<h3 id="tianlun-luo-stefan-rickli-yue-xu">Tianlun Luo, Stefan Rickli, Yue Xu</h3>
+<div class="figure">
+<img src="images/arm.png" width="300" />
+
+</div>
+<h2 id="abstract">Abstract</h2>
+<p>In this project, we explored the topic of inverse kinematics in computer graphics through rendering a moving 3D robot arm. The robot arm is constructed with bones and different types of joints, where bones are modeled with cylinders of variable height and radius and joints are modeled with spheres and cylinders. Three types of joints were implemented, an axial joint with 1 degrees of freedom, a hinge joint with 1 degrees of freedom, and a ball joint with 3 degrees of freedom. Many different variations of the robot arm can be constructed by picking a combination of bones and joints. The Jacobian inverse technique is used to solve the inverse kinematics problem given the end effector and a target. Two methods can be used for the robot arm to reach the target. First, an iterative method that steps the delta angle provided from the singular value decomposition of the Jacobian, and second, a predefined trajectory characterized by a linear or Bezier curve.</p>
+<h2 id="technical-approach">Technical approach</h2>
+<p>We went about this project by first tackling the baseline. This task included setting up the framework and understanding how inverse kinematics worked inorder to move the robot arm. The planning of our code structure is important since we wanted to be flexible enough to add more complex joints with more degrees of freedom. From Refernce [2], we saw a demo of inverse kinematics in 2D, implemented in GLUT. Our original plan was to use that source code as our starting point and add the 3D functionality and different joints and structures. However, we were not able adapt the code with our unfamiliarity of GLUT, so we switched to the SolarViewer instead. This reference helped us understand the main idea of iterative inverse kinematics such as using a timer to help step the inverse kinematics calculation as well as how a Jacobian matrix looked like with 1 degrees of freedom. Since our code base is different from the reference as well as we are implementing the robot arm in 3D and mutiple degrees of freedom, all of our code is written from scatch. The framework and the inverse kinematics work flow of our implementation is described in detail below.</p>
+<p>For the extention, we implemented a ball joint with 3 degrees of freedom as well as using Bezier curves for the trajectory of the effector. For the ball joint, a seperate Ball class is created, with member variables rot_angle_x_, rot_angle_y_, and rot_angle_z_. The member function forward() as well as update_dof() is changed from the other joint objects to reflect the 3 degrees of freedom. The main calculation of the Jacobian did not change with the addition of ball joint since our baseline code structure anticipated the different matrix dimentions. In order for our effector to follow a Bezier curve, we created a quadratic and a cubic Bezier curve function that takes in the effector and target points, as well as one or two control points, which generates a vector of points along the path depending on the step size. That vector is then used to generate next target points. In order to have a better visualization of the bezier curve, we explicitly draw out the path of the bezier curve, and in the animation, we can observe that the robot arm strictly follows along the drawn path.</p>
+<h3 id="framework">Framework</h3>
+<p>This project is built on the SolarViewer framework from the previous assignments. Since we are modeling the robot arm with cylinders and spheres, we first implemented the cylinder class from modifying the sphere class which allows us to generate cylinder meshes. We then remove all the planets from the original SolarViewer and render the combination of spheres and cylinders instead. The rest of the framework remains very similar to the original SolarViewer. Specifically, the user is able to control animation speed, zoom in/zoom out on the object, and view the object from different angles, etc.</p>
+<p>The robot arm is contructed by a list of objects. We first define an object class for a generic object, and we inherit bone, axial joint, hinge joint, and ball joint from the object. Each object has its position and orientation which are updated at every time step of the animation according to the current state of the robot arm. The current state of the robot arm is a list of parameters specificying how each object should change its position and orientation. Specifically, the state provides each object with a vector (vec4) specifying how it should change its location and a rotation matrix specifying how it should rotate. The joint objects should only change its orientation at each update, whereas a bone object should only change its location. When updating the robot arm, we apply the forward kinematics algorithm in which we start at the base location of the first object, then we apply the changes specified by the state and calcuate the end location of the object, which becomes that start location of the next object. We perform this procedure for each object of the robot arm. At each time step, the state of the robot arm is updated by the inverse kinematics algorithm.</p>
+<p>In our framework, each object is instantiated and initialized by the kinematics class. The kinematics class stores all the objects that are part of the robot arm, and provides the necessary functions to perform the forward and inverse kinematics calculations, as well as to update the state of the robot arm.</p>
+<p>The inv_kin_viewer class, similar to the solar_viewer class, takes care of all the rendering procedures and interactions with OpenGL. Specifically, the inv_kin_viewer class provides the necessary functions to go through every object in the robot arm and render it, and to compute the transformation matrices needed by the shaders for rendering. Furthermore, we implemented bezier curve in the inv_kin_viewer class in which we consturct a vector of points going from the robot's end effect to the target location. We have an iterator for this vector which increments at every time step in order to provide a new &quot;target&quot; for the robot arm to approach to.</p>
+<h3 id="inverse-kinematics-work-flow">Inverse Kinematics Work FLow</h3>
+<p>From Refernces [1][3][4], we understood the main idea of the inverse kinematics implementation. Below is the general pseudocode algorithm that we followed:</p>
+<p>while ( effector != target) {</p>
+<ol style="list-style-type: decimal">
+<li><p>compute Jacobian J</p></li>
+<li><p>compute peudoinverse of Jacobian J+</p></li>
+<li><p>compute change in joint DOF: delta_angle = J+ * delta_effector</p></li>
+<li><p>apply change to DOF</p></li>
+<li><p>move a small step (eta) towards delta_angle: angle = angle + eta * delta_angle</p></li>
+</ol>
+<p>}</p>
+<p>Below are the main functions that are used to implement the algorithm above. The iterative algorithm is implemented with the flow of functions below:</p>
+<ol style="list-style-type: decimal">
+<li>Inv_kin_viewer::timer() -- The step function is called to calculate the change in angle for each joint given the target location. Then the update_body_positions function is called to calculate new positions for each component of the arm.</li>
+<li>Kinematics::step() -- Current effector is computed through calling forward on old effector position. Check if current effector is at target, and return if it is. Computes the Jacobian matrix and computes the peudo inverse of the Jacobian to calculate delta angle. Then updates the state with the new delta angle.</li>
+<li>Kinematics::forward() -- Computes the current coordinates by applying forward kinematics.</li>
+<li>Kinematics::J3() -- Computes the derivative by define a new state by a change in epislon of current state. Calculate the current and next effector by applying forward on the old and new states. Calculate the current and next absolute angles for each component. Compute the delta angles by storing the change in effector and change in angles, and finally assebling the Jacabian matrix.</li>
+<li>Kinematics::update_body_positions() -- The positions and angles of each object of the model is updated. Current coordinates of each model is calculated by applying forward.</li>
+<li>Inv_kin_viewer::draw_scene() -- New scene is drawn with updated object positions.</li>
+</ol>
+<h3 id="problems-encountered">Problems Encountered</h3>
+<h5 id="framework-setup-with-glut.">1. Framework setup with GLUT.</h5>
+<p>We originally wanted to implement our project on top of a 2D inverse kinematics framework which uses GLUT. We couldn't get GLUT to build on our Windows machines as the library is too outdated and we couldn't find proper instructions build it. We decided not to use that 2D inverse kinematics framework, and we ended up building out project on the SolarViewer framework instead.</p>
+<h5 id="getting-armadillo-5-linear-algebra-library-to-link-with-our-project.">2. Getting armadillo [5], linear algebra library, to link with our project.</h5>
+<p>We needed to use the linear algebra library to help us with Jacobian and pseudo inverse computations. However, we had trouble modifying the cmake files to get it to properly link with our project. After going through many cmake documentations and tutorials, we managed to get it working.</p>
+<h5 id="fix-local-minima-solutions-with-pertubations.">3. Fix local minima solutions with pertubations.</h5>
+<p>In some cases the robot arm might get stuck at a local minimum, in which case the end effector is not quite at the target location but it stops moving. To fix this issue, we first check for local minimum by counting the number of small updates in the change in angles, and if there are more than 20 small updates in a row, it is possible that we hit a local minimum, in which case we add some random values to the change in angles to perturb it, effectively helping it getting out of the local minimum.</p>
+<h2 id="results">Results</h2>
+<p>Below is a link to our presentation video. Skip to 1 minute for project demonstration.</p>
+<p>First clip is a demonstraion of the baseline with hinge and axial joints and multiple targets. Second clip shows has the addition of the ball joint with linear path from effector to target. Third clip has the same structure as the second clip but shows the quadratic path from effector to the same target. The last clip shows some cubic Bezier path from effector to target.</p>
+<p><a href="https://www.youtube.com/watch?v=lawU3ChE7Ws
+" target="_blank"><img src="http://img.youtube.com/vi/YOUTUBE_VIDEO_ID_HERE/0.jpg" 
+alt="IMAGE ALT TEXT HERE" width="240" height="180" border="10" /></a></p>
+<h2 id="source-files">Source files</h2>
+<p>Our Git repository contains the source code. A zipped version is available: <a href="https://gitlab.epfl.ch/graphics-squad/icg_final/tree/master/3D_inverse_kinematics_0">click here</a></p>
+<h2 id="contribution">Contribution</h2>
+<p>All team members worked together and contributed equally. Specifically, Stefan and Tian worked on the framework and debugging while Yue worked on the iterative inverse kinematics for the baseline. We then all worked on the extention of ball joint and Bezier curves.</p>
+<h2 id="resources">Resources</h2>
+<h5 id="websites-including-libraries-and-source-code">Websites: (including libraries and source code)</h5>
+<ol style="list-style-type: decimal">
+<li><p><a href="https://en.wikipedia.org/wiki/Inverse_kinematics#The_Jacobian_inverse_technique" class="uri">https://en.wikipedia.org/wiki/Inverse_kinematics#The_Jacobian_inverse_technique</a></p></li>
+<li><p><a href="http://www.alexandrosdermenakis.com/InverseKinematicsTutorial" class="uri">http://www.alexandrosdermenakis.com/InverseKinematicsTutorial</a></p></li>
+<li><p><a href="http://concordia.sk/programming/machine-learning-robotics/210-inversekinematics">Concordia - inversekinematics - http://concordia.sk/programming/machine-learning-robotics/210-inversekinematics</a></p></li>
+<li><p><a href="http://www.darwin3d.com/gdm1998.htm#gdm0998">Darwin 3D, LLC - General Inverse Kinematics Solution, Inverse Kinematics 2D - http://www.darwin3d.com/gdm1998.htm#gdm0998</a></p></li>
+<li><p><a href="http://arma.sourceforge.net/">Armadillo - C++ library for linear algebra &amp; scientific computing - http://arma.sourceforge.net/</a></p></li>
+</ol>
+<h5 id="paper">Paper:</h5>
+<ol start="6" style="list-style-type: decimal">
+<li><a href="https://ieeexplore.ieee.org/document/973374">Learning inverse kinematics - A. D'Souza, S. Vijayakumar, S. Schaal - https://ieeexplore.ieee.org/document/973374</a></li>
+</ol>
+</body>
+</html>
